@@ -1,0 +1,210 @@
+<h3>Presented Datastores</h3>
+
+<div class="upload-container">
+    <button id="refreshPresentedBtn" class="button" onclick="refreshPresentedDatastores()">Refresh List</button>
+    <button id="fetchAllDetailsBtn" class="button" onclick="fetchAllDatastoreDetails()">Fetch All Details</button>
+    <button id="restoreAllBtn" class="redButton" onclick="restoreAllVMs()">Restore All</button>
+    <button id="restoreSelectedBtn" class="greenButton" onclick="restoreSelectedVMs()" style="display:none;">Restore Selected</button>
+    <button id="reintializePDBtn" class="redButton" onclick="reinitializePD()">Reinitialize</button>
+    <div id="loadingSpinnerpresDS" class="spinner" style="display: none;"></div>
+</div>
+<div class="restore-actions">
+</div>
+
+
+<div id="presented-datastore-list"></div> <!-- Accordion Container -->
+
+<style>
+    .datastore-entry {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: #f3f3f3;
+        padding: 10px;
+        margin-top: 5px;
+        border-radius: 5px;
+    }
+
+    .datastore-info {
+        display: flex;
+        flex-grow: 1;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .accordion {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        color: #007bff;
+        padding: 5px;
+        transition: 0.3s;
+        margin-left: auto;
+    }
+
+    .accordion:hover {
+        color: #0056b3;
+    }
+
+    .panel {
+        display: none;
+        background-color: #f9f9f9;
+        padding: 10px;
+        border-left: 3px solid #007bff;
+        border-radius: 5px;
+        margin-top: 5px;
+    }
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    console.log("🔄 Fetching Presented Datastores on page load...");
+    await refreshPresentedDatastores();
+
+});
+
+async function refreshPresentedDatastores() {
+    const container = document.getElementById("presented-datastore-list");
+
+    try {
+        const response = await fetch('/vsphere/presentedDatastores');
+        const data = await response.json();
+
+        container.innerHTML = ""; // Clear previous entries
+
+        data.forEach(({ datastore_name, canonical, status, folders }) => {
+            const datastoreHTML = `
+                <div class="datastore-entry">
+                    <div class="datastore-info">
+                        <strong>${datastore_name}</strong> 
+                        <span>${canonical}</span>
+                        <span style="color: ${status === 'Presented' ? 'green' : 'red'};">${status}</span>
+                    </div>
+                    <button class="accordion" onclick="toggleAccordion(this, '${datastore_name}')">▼</button>
+                </div>
+                <div class="panel" id="details-${datastore_name}">
+                    ${folders.length > 0 ? `
+                        ${folders.map(folder => `
+                            <p><strong>Folder:</strong> ${folder.folder_path}</p>
+                            ${folder.vmxFiles.length > 0 ? `
+                                <ul>
+                                    ${folder.vmxFiles.map(vmx => `
+                                        <li>
+                                            <input type="checkbox" class="vmx-checkbox" data-datastore="${datastore_name}" data-vmx="${vmx.vmx_file_name}" data-path="${vmx.vmx_path}" onchange="toggleRestoreOptions()" ${vmx.status !== 'unregistered' ? 'disabled' : ''}>
+                                            ${vmx.vmx_file_name} - <span style="color: ${vmx.status === 'unregistered' ? 'orange' : 'green'};">${vmx.status}</span>
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            ` : `<p>No .vmx files found in this folder.</p>`}
+                        `).join('')}
+                    ` : `<p>No folders found.</p>`}
+                </div>`;
+
+            container.innerHTML += datastoreHTML;
+
+            const panel = document.getElementById(`details-${datastore_name}`);
+            if (folders.length > 0) {
+                panel.style.display = "block"; // ✅ Auto Expand
+            }
+        });
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("❌ Error: Could not fetch presented datastores.");
+    }
+}
+async function fetchAllDatastoreDetails() {
+    const fetchAllDetailsBtn = document.getElementById("fetchAllDetailsBtn");
+    const loadingSpinner = document.getElementById("loadingSpinnerpresDS");
+    // Disable button & show spinner
+        fetchAllDetailsBtn.disabled = true;
+        loadingSpinner.style.display = "inline-block";
+
+    try {
+        const response = await fetch('/vsphere/allDatastoreDetails');
+        const result = await response.json();
+        alert(result.message);
+        await refreshPresentedDatastores();
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("❌ Error: Could not fetch extra datastore details.");
+    }finally {
+            // Re-enable button & hide spinner
+            fetchAllDetailsBtn.disabled = false;
+            loadingSpinner.style.display = "none";
+        }
+}
+
+function toggleAccordion(button, datastoreName) {
+    const panel = document.getElementById(`details-${datastoreName}`);
+    panel.style.display = (panel.style.display === "block") ? "none" : "block";
+}
+function toggleRestoreOptions() {
+    const selected = document.querySelectorAll('.vmx-checkbox:checked');
+    const restoreSelectedBtn = document.getElementById('restoreSelectedBtn');
+    const restoreButtons = document.querySelectorAll('.restore-btn');
+
+    // Restore Selected Button Visibility
+    restoreSelectedBtn.style.display = selected.length >= 1 ? "block" : "none";
+}
+
+async function restoreAllVMs() {
+    alert("Not Implemented"); return;
+    if (!confirm("Are you sure you want to restore all VMs?")) return;
+    const response = await fetch('/vsphere/restoreAllVMs', {
+        method: 'POST'
+    });
+    const result = await response.json();
+    alert(result.message);
+    refreshPresentedDatastores(); // Refresh UI
+}
+
+async function restoreSelectedVMs() {
+    if (!confirm("Are you sure you want to restore Selected VMs?")) return;
+    const selected = document.querySelectorAll('.vmx-checkbox:checked');
+    const vmxPaths = Array.from(selected).map(cb => cb.dataset.path);
+    console.log(vmxPaths);
+    const restoreSelectedBtn = document.getElementById("restoreSelectedBtn");
+    const loadingSpinner = document.getElementById("loadingSpinnerpresDS");
+    // Disable button & show spinner
+        restoreSelectedBtn.disabled = true;
+        loadingSpinner.style.display = "inline-block";
+
+    const response = await fetch('/vsphere/restoreSelectedVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vmxPaths })
+    });
+
+    const result = await response.json();
+    alert(result.message);
+    // Re-enable button & hide spinner
+            restoreSelectedBtn.disabled = false;
+            loadingSpinner.style.display = "none";
+    refreshPresentedDatastores();
+}
+
+async function reinitializePD() {
+    alert("Please Make Sure all Datastore already unmounted Properly from vCenter!!")
+    if (!confirm("Are you sure you want to Reinitialize?")) return;
+
+    try {
+        const reinitBtn = document.getElementById("reintializePDBtn");
+
+        reinitBtn.disabled = true;
+        const response = await fetch('/vsphere/presentedDatastores', { method: 'DELETE' });
+        const data = await response.json();
+
+        alert("✅ Datastore Reinitialize complete.");
+
+        } catch (err) {
+            console.error("Fetch error:", err);
+            alert("❌ Error: Could not Reinitialize.");
+        } finally {
+        // Re-enable button & hide spinner
+            reinitBtn.disabled = false;
+        }
+    }
+
+
+</script>

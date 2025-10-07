@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vSphere Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: auto; }
+        .hidden { display: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>vSphere Management</h2>
+
+    <!-- VMHost List -->
+    <div id="vmhost-section" class="hidden">
+        <h3>ESXi Hosts</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Host Name</th>
+                    <th>Status</th>
+                    <th>CPU</th>
+                    <th>Memory (GB)</th>
+                </tr>
+            </thead>
+            <tbody id="vmhost-list">
+                <!-- Data will be inserted here -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", async () => {
+        console.log("🔄 Fetching VM Hosts on page load...");
+        await fetchVMHosts();
+    });
+
+
+    async function fetchVMHosts() {
+        try {
+            const response = await fetch("/vsphere/vmhosts");
+            const data = await response.json();
+            console.log(data);
+            
+            if (data.success) {
+                document.getElementById("vmhost-section").classList.remove("hidden");
+                const tableBody = document.getElementById("vmhost-list");
+                tableBody.innerHTML = "";
+
+                data.vmhosts.forEach(host => {
+                    const row = document.createElement("tr");
+                    row.innerHTML = `<td>${host.Name}</td><td>${host.ConnectionState}</td><td>${host.CPU}</td><td>${host.Memory}</td>`;
+                    tableBody.appendChild(row);
+                });
+            } else {
+                alert("Failed to fetch VMHosts: " + data.error);
+            }
+        } catch (err) {
+            console.error("Error fetching VMHosts:", err);
+        }
+    }
+</script>
+
+</body>
+</html>

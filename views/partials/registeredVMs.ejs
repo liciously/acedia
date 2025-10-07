@@ -1,0 +1,499 @@
+<h3>Registered VMs</h3>
+
+<div class="upload-container">
+    <button id="refreshVMsBtn" class="button" onclick="refreshVMs()">Refresh List</button>
+    <button id="commitSetNICBtn" class="orangebutton" onclick="commitChangeNICs()" title="Commit selected NIC VLAN configurations to Internal DB">Commit NIC</button>
+    <button id="reconfigBtn" class="orangebutton" onclick="reconfigNicAll()" title="Reconfigured the VM with selected VLAN configurations from Internal DB">Reconfigure All VM NIC</button>
+    <button id="powerVMSingleBtn" class="orangebutton" onclick="powerOnVMSingle()" style="display:none;">Power On VM</button>
+    <button id="powerVMBtn" class="orangebutton" onclick="powerOnVMs()" style="display:none;">Power On Selected</button>
+    <button id="powerOffVMSingleBtn" class="redButton" onclick="powerOffVMSingle()" style="display:none;">Power Off VM</button>
+    <button id="powerOffVMBtn" class="redButton" onclick="powerOffVMs()" style="display:none;">Power Off Selected</button>
+    <button id="removeVMBtn" class="redButton" onclick="removeVMs()" style="display:none;">Remove Selected</button>
+    <div id="loadingSpinnerpRV" class="spinner" style="display: none;"></div>
+    <input type="file" id="csvVM" accept=".csv">
+    <button class="greenButton" id="uploadVMDataBtn" title="Upload Set of VM(s) nic-VLAN configurations to Internal DB">Upload CSV</button>
+</div>
+
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>VM Name</th>
+                <th>Status</th>
+                <th>NIC1</th>
+                <th>Last NIC1</th>
+                <th>NIC2</th>
+                <th>Last NIC2</th>
+                <th>Select</th>
+            </tr>
+        </thead>
+        <tbody id="registered-vm-list"></tbody>
+    </table>
+</div>
+
+<style>
+.table-container {
+    margin-top: 20px;
+    max-height: 400px; 
+    overflow-y: auto; /* Scroll if too many VMs */
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+
+.registered-status {
+    color: green;
+    font-weight: bold;
+}
+
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    background-color: green;
+    color: black;
+    padding: 10px;
+    text-align: center;
+    width: 14%; /* Equal Width for All Columns */
+}
+
+td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid #ccc;
+}
+
+tr:hover {
+    background-color: #f1f1f1;
+}
+
+.nic-dropdown {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    width: 250px; /* Consistent Width for NIC Dropdown */
+    text-align: left;
+}
+
+.vm-checkbox {
+    cursor: pointer;
+}
+
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    console.log("🔄 Fetching Registered VM on page load...");
+    await refreshVMs();
+});
+
+document.getElementById("uploadVMDataBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("csvVM"); // Make sure the correct ID is used
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Please select a CSV file.");
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+        const text = e.target.result.trim();
+        const rows = text.split("\n").map(row => row.trim()).filter(row => row.length > 0); // Trim and filter empty lines
+
+        const vmData = [];
+                
+                // Start from index 1 to skip header
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const [vm_name, nic1_vlan, nic2_vlan] = row.split(",").map(col => col.trim());
+                    vmData.push({ vm_name, nic1_vlan, nic2_vlan });
+                }
+
+        console.log("Parsed CSV Data:", vmData);
+
+        try {
+            const response = await fetch("/vsphere/uploadVMData", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(vmData),
+            });
+
+            const result = await response.json();
+            alert(result.message);
+            await refreshVMs();
+        } catch (err) {
+            console.error("Upload Error:", err);
+            alert("❌ Failed to upload CSV data.");
+        }
+    };
+
+    reader.onerror = () => {
+        console.error("Error reading the file");
+        alert("❌ Could not read CSV file.");
+    };
+
+    reader.readAsText(file);
+});
+
+
+async function refreshVMs() {
+    await fetchNICOptions();
+
+    const container = document.getElementById("registered-vm-list");
+
+    try {
+        const [registeredResponse, lastConfiguredResponse] = await Promise.all([
+            fetch('/vsphere/registeredVMs'),
+            fetch('/vsphere/lastConfiguredVMs')
+        ]);
+
+        const registeredVMs = await registeredResponse.json();
+        const lastConfiguredVMs = await lastConfiguredResponse.json();
+
+        console.log("Registered VMs:", registeredVMs);
+        console.log("Last Configured VMs:", lastConfiguredVMs);
+
+        container.innerHTML = "";
+
+        registeredVMs.forEach(({ vm_name, vmx_path, status, nic1_vlan, nic2_vlan }) => {
+            const lastConfig = lastConfiguredVMs.find(vm => vm.vm_name === vm_name);
+            const lastNic1 = lastConfig ? lastConfig.nic1_vlan : "N/A";
+            const lastNic2 = lastConfig ? lastConfig.nic2_vlan : "N/A";
+
+            let nicOptionsHTML = nicOptions.map(vlan =>
+                `<option value="${vlan}" ${vlan === nic1_vlan ? "selected" : ""}>${vlan}</option>`
+            ).join("");
+
+            let nicOptionsHTML2 = nicOptions.map(vlan =>
+                `<option value="${vlan}" ${vlan === nic2_vlan ? "selected" : ""}>${vlan}</option>`
+            ).join("");
+
+            const statusClass = status !== "deregistered" ? 'registered-status' : '';
+            const rowHTML = `
+                <tr>
+                    <td><strong>${vm_name}</strong></td>
+                    <td class="${statusClass}">${status}</td>
+                    <td>
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC1 VLAN</option>
+                            ${nicOptionsHTML}
+                        </select>
+                    </td>
+                    <td>${lastNic1}</td>
+                    <td>
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC2 VLAN</option>
+                            ${nicOptionsHTML2}
+                        </select>
+                    </td>
+                    <td>${lastNic2}</td>
+                    <td>
+                        <input type="checkbox" class="vm-checkbox" value="${vm_name}" data-path="${vm_name}" onchange="togglePowerOptions()">
+                    </td>
+                </tr>
+            `;
+
+            container.innerHTML += rowHTML;
+        });
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("❌ Could not fetch Registered VMs.");
+    }
+}
+
+/*async function commitChangeNICs() {
+    //const vmEntries = document.querySelectorAll(".vm-entry");
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    console.log(selected);
+    const vms = selected.map(cb => cb.dataset.path);
+    console.log(vms);
+    let changedNICs = [];
+    console.log("this is vms", vms);
+
+    vms.forEach(row => {
+        const checkbox = row.querySelector(".vm-checkbox");
+        if (!checkbox.checked) return;
+
+        const vmxPath = checkbox.value;
+        console.log("this is vmxPath",vmxPath);
+        const selects = row.querySelectorAll(".nic-dropdown");
+        const nic1_vlan = selects[0].value;
+        const nic2_vlan = selects[1].value;
+
+        changedNICs.push({
+            vm_name: vm_name,
+            nic1_vlan,
+            nic2_vlan
+        });
+    });
+
+    console.log("🔄 Sending NIC changes:", changedNICs);
+
+    try {
+        const response = await fetch("/vsphere/commitNICs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ vms: changedNICs })
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            alert("✅ NIC VLANs updated successfully.");
+            await refreshVMs();
+        } else {
+            alert("❌ Failed to update NIC VLANs: " + result.error);
+        }
+    } catch (err) {
+        console.error("Error committing NIC changes:", err);
+        alert("❌ Network error occurred.");
+    }
+}*/
+
+async function commitChangeNICs() {
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    console.log("Selected Checkboxes:", selected);
+
+    let changedNICs = [];
+
+    selected.forEach((checkbox) => {
+        const row = checkbox.closest("tr"); // Get the parent row element
+        if (!row) return;
+
+        const vm_name = checkbox.value; // VM name from checkbox value
+        console.log("VM Name:", vm_name);
+
+        const selects = row.querySelectorAll(".nic-dropdown");
+        const nic1_vlan = selects[0]?.value || ""; // Safely get NIC1 value
+        const nic2_vlan = selects[1]?.value || ""; // Safely get NIC2 value
+
+        console.log(`VM: ${vm_name}, NIC1: ${nic1_vlan}, NIC2: ${nic2_vlan}`);
+
+        changedNICs.push({
+            vm_name,
+            nic1_vlan,
+            nic2_vlan
+        });
+    });
+
+    if (changedNICs.length === 0) {
+        alert("❌ No VMs selected for NIC change.");
+        return;
+    }
+
+    console.log("Changed NICs Payload:", changedNICs);
+
+    try {
+        const response = await fetch("/vsphere/commitNICs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(changedNICs)
+        });
+
+        const result = await response.json();
+        alert(result.message);
+        await refreshVMs();
+    } catch (err) {
+        console.error("Commit Error:", err);
+        alert("❌ Failed to commit NIC changes.");
+    }
+}
+
+
+async function fetchNICOptions() {
+    try {
+        const response = await fetch('/vsphere/nicOptions');
+        nicOptions = await response.json();
+        //console.log("NIC Options:", nicOptions);
+    } catch (err) {
+        console.error("Error fetching NIC options:", err);
+    }
+}
+
+async function reconfigNicAll() {
+    if (!confirm("Are you sure you want to reconfigure all VMs?")) return;
+
+    try {
+        const response = await fetch("/vsphere/reconfigNicAll", {
+            method: "POST",
+        });
+
+        const result = await response.json();
+        alert(result.message);
+    } catch (err) {
+        console.error("Reconfiguration Error:", err);
+        alert("❌ Failed to reconfigure all VMs.");
+    }
+        await refreshVMs();
+}
+
+async function powerOnVMs() {
+    if (!confirm("Are you sure you want to Power On Selected VMs?")) return;
+
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    if (selected.length === 0) {
+        alert("⚠️ No VM selected!");
+        return;
+    }
+
+    const vms = Array.from(selected).map(cb => cb.dataset.path);
+    console.log("Selected VMs:", vms);
+
+    const response = await fetch('/vsphere/powerOnVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vms })
+    });
+
+    const result = await response.json();
+    alert(result.message);
+
+    // Reload the page
+    window.location.reload();
+}
+
+
+async function powerOnVMSingle() {
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+
+    if (selected.length !== 1) {  // Ensure only one is selected
+        alert("⚠️ Please select exactly one VM to power on.");
+        return;
+    }
+
+    if (!confirm("Are you sure you want to Power On this VM?")) return;
+
+    const vm_name = selected[0].dataset.path; // Only one VM
+    console.log("Powering On VM:", vm_name);
+
+    const response = await fetch('/vsphere/powerOnVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vms: [vm_name] }) // Send as an array
+    });
+
+    const result = await response.json();
+    alert(result.message);
+    document.getElementById("powerVMSingleBtn").style.display = "none";
+    document.getElementById("powerOffVMSingleBtn").style.display = "none";
+    await refreshVMs();
+}
+
+async function powerOffVMs() {
+    if (!confirm("Are you sure you want to Power Off Selected VMs?")) return;
+
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    if (selected.length === 0) {
+        alert("⚠️ No VM selected!");
+        return;
+    }
+
+    const vms = Array.from(selected).map(cb => cb.dataset.path);
+    console.log("Selected VMs:", vms);
+
+    const response = await fetch('/vsphere/powerOffVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vms })
+    });
+
+    const result = await response.json();
+    alert(result.message);
+
+    // Reload the page
+    window.location.reload();
+}
+
+
+
+async function powerOffVMSingle() {
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+
+    if (selected.length !== 1) {  // Ensure only one is selected
+        alert("⚠️ Please select exactly one VM to power off.");
+        return;
+    }
+
+    if (!confirm("Are you sure you want to Power Off this VM?")) return;
+
+    const vm_name = selected[0].dataset.path; // Only one VM
+    console.log("Powering Off VM:", vm_name);
+
+    const response = await fetch('/vsphere/powerOffVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vms: [vm_name] }) // Send as an array
+    });
+
+    const result = await response.json();
+    alert(result.message);
+    document.getElementById("powerVMSingleBtn").style.display = "none";
+    document.getElementById("powerOffVMSingleBtn").style.display = "none";
+    await refreshVMs();
+}
+
+async function removeVMs() {
+    if (!confirm("Are you sure you want to Remove Selected VMs?")) return;
+
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    if (selected.length === 0) {
+        alert("⚠️ No VM selected!");
+        return;
+    }
+
+    const vms = Array.from(selected).map(cb => cb.dataset.path);
+    console.log("Selected VMs:", vms);
+
+    const response = await fetch('/vsphere/removeVMs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vms })
+    });
+
+    const result = await response.json();
+    alert(result.message);
+
+    // Reload the page
+    window.location.reload();
+}
+
+
+function togglePowerOptions() {
+    const selected = document.querySelectorAll('.vm-checkbox:checked');
+    const powerSingleBtn = document.getElementById('powerVMSingleBtn');
+    const powerOffSingleBtn = document.getElementById('powerOffVMSingleBtn');
+    const powerSelectedBtn = document.getElementById('powerVMBtn');
+    const powerOffSelectedBtn = document.getElementById('powerOffVMBtn');
+    const removeVMBtn = document.getElementById('removeVMBtn'); // Assuming you have this button
+
+    let poweredOffCount = 0;
+    let poweredOnCount = 0;
+    let registeredCount = 0;
+
+    selected.forEach(cb => {
+        const row = cb.closest('tr');
+        const status = row.querySelector('td:nth-child(2)').textContent.trim(); // Adjust column index if needed
+
+        if (status.toLowerCase() === "powered off") {
+            poweredOffCount++;
+        } else if (status.toLowerCase() === "powered on") {
+            poweredOnCount++;
+        } else if (status.toLowerCase() === "registered"){
+            registeredCount++;
+        }
+    });
+
+    powerSingleBtn.style.display = ((selected.length === 1 && poweredOffCount === 1)||(registeredCount ===1)) ? "block" : "none";
+    powerSelectedBtn.style.display = ((selected.length > 1 && poweredOffCount > 0 && poweredOnCount === 0 )||(registeredCount > 1)) ? "block" : "none";
+    powerOffSingleBtn.style.display = (selected.length === 1 && poweredOnCount === 1) ? "block" : "none";
+    powerOffSelectedBtn.style.display = (selected.length > 1 && poweredOnCount > 0 && poweredOffCount === 0) ? "block" : "none";
+    removeVMBtn.style.display = (selected.length > 0 && poweredOffCount === selected.length) ? "block" : "none"; // Show remove button only if all selected VMs are powered off
+}
+
+
+
+
+</script>

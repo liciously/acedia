@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choose Environment</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .button { padding: 15px 30px; margin: 10px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h2>Select Your Environment</h2>
+    <form method="POST" action="/set-environment">
+        <button class="button" name="environment" value="jkt">JKT</button>
+        <button class="button" name="environment" value="sby">SBY</button>
+        <button class="button" name="environment" value="ini">TEST</button>
+    </form>
+</body>
+</html>

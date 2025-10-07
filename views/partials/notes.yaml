@@ -1,0 +1,147 @@
+
+let prefix = "naa.624a9370";
+let serial = "24DF482005E7472104B13842";
+24DF482005E7472104B69F24
+
+let path = prefix + serial;
+#CANONICAL NAME FROM CONCATENATE 
+console.log(path); // Output: naa.624a937024DF482005E7472104B69F24
+
+
+#GET CANONICAL NAME WITH LUN COULD BE DUPLICATE SINCE MANY STORAGE ARRAY BUT IN ISOLATED ONLY 1 STORAGE
+#      Get-ScsiLun -VmHost pgd-jkt-srd-svr-01.pegadaian.co.id -LunType disk | Where{ $_.RuntimeName -match "253", $_.CanonicalName -eq "naa.624a937024DF482005E7472104B13842" }
+Get-ScsiLun -VmHost pgd-jkt-srd-svr-01.pegadaian.co.id -LunType disk | Where{ $_.RuntimeName -like "*L253" -and $_.CanonicalName -ieq $testCN.ToLower() }|Select CanonicalName, CapacityGB, RuntimeName
+
+CanonicalName                        CapacityGB RuntimeName       
+-------------                        ---------- -----------       
+naa.624a937024df482005e7472104b17ef0         20 vmhba1:C0:T10:L253
+
+#RESCAN HOST
+Get-VMHostStorage -VMHost pgd-jkt-srd-svr-01.pegadaian.co.id -RescanAllHba -RescanVmfs
+
+# Retrieve the datastore system view
+$dsView = Get-View $esxhost.ExtensionData.ConfigManager.DatastoreSystem
+
+# Get all unresolved VMFS volumes
+$UnBound = $dsView.QueryUnresolvedVmfsVolumes()
+
+# Define the target LUN to resignature
+$targetSerial = "naa.624a937024DF482005E7472104B26EBE"
+#ALREADY HAVE FROM THE CURRENT APP
+
+# Iterate through each unresolved VMFS volume
+foreach ($ub in $UnBound) {
+    $extPaths = @()
+    $Extents = $ub.Extent
+
+    foreach ($ex in $Extents) {
+        $extPaths += $ex.DevicePath
+    }
+
+    # Check if the extent path matches the target LUN
+    if ($extPaths -contains $targetSerial) {
+        Write-Host "🔹 Found matching Serial: $targetSerial, proceeding with resignature..."
+
+        # Create a resignature spec
+        $res = New-Object VMware.Vim.HostUnresolvedVmfsResignatureSpec
+        $res.ExtentDevicePath = $extPaths
+
+        # Perform the resignature
+        $resigDS = $dsView.ResignatureUnresolvedVmfsVolume($res)
+
+        Write-Host "✅ Resignature completed for Serial: $targetSerial, Signatured DS Name :$resigDS"
+    } else {
+        Write-Host "❌ No matching unresolved Serials found."
+    }
+}
+#Find and rename new datastore.
+$ProductionVolume = "PGD-RESTEST-1"
+#HERE NEED ACTUAL VOLUME FROM BEFORE REPLICATED
+$TargetVMCenterDatastoreName = "901-PGD-RESTEST-1"
+#HERE ALREADY HAVE FROM THE CURRENT APP
+$NewDatastore = Get-Datastore -VmHost pgd-jkt-srd-svr-01.pegadaian.co.id | Where{ $_.Name -like "snap-*$ProductionVolume" }
+
+Set-Datastore $NewDatastore -Name $TargetVMCenterDatastoreName
+
+####
+
+#$vm_to_restore=$vm_to_restore
+$vCenterIP = 10.254.254.77
+#$datacenterName = INSERT DATACENTER NAME HERE PGD-JKT-vDC Used for DEVS
+$esxhost= Get-VMHost pgd-jkt-srd-svr-01.pegadaian.co.id
+
+$vmxFiles = Get-ChildItem -Path "vmstores:\$vCenterIP@443\$datacenterName\$TargetVMCenterDatastoreName\$vm_to_restore\" -Filter "*.vmx"
+
+$vmxFolder = Get-ChildItem -Path "vmstores:\$vCenterIP@443\$datacenterName\$TargetVMCenterDatastoreName\" | Where-Object { $_.Name -notin @(".sdd.sf", ".dvsData", ".vSphere-HA") -and $_.PSIsContainer}
+
+GET ALL FOLDER THAT MOST LIKELY CONTAIN VM IN IT
+if ($vmxFiles) {
+    foreach ($vmx in $vmxFiles) {
+        New-VM -VMFilePath $vmx.DatastoreFullPath -Host $esxHost
+        Write-Host "✅ VM registered successfully from: $($vmx.DatastoreFullPath)"
+    }
+} else {
+    Write-Host "❌ No VMX files found in datastore $TargetVMCenterDatastoreName/$vm_to_restore"
+}
+
+NEED TO CUT FUNCTION HERE BEFORE REGISTERING THE ACTUAL VM
+
+$vmxFiles = Get-ChildItem -Path "vmstores:\$vCenterIP@443\$datacenterName\$TargetVMCenterDatastoreName\$vm_to_restore\" -Filter "*.vmx" | 
+            Select-Object Name, ItemType
+
+$processedVmxFiles = $vmxFiles | ForEach-Object { 
+    [PSCustomObject]@{
+        Name = $_.Name
+        Type = if ($_.ItemType -eq 4) { "VmConfigFile" } else { $_.ItemType }
+    }
+}
+.vm-entry
+$processedVmxFiles #this will return JSON
+{
+    "Name":  "VM-RESTEST-1.vmx",
+    "Type":  "VmConfigFile"
+}
+
+//LATEST REGISTERING VM SCHEMA
+$TargetVMCenterDatastoreName = "1129-PGD-RESTEST-1"
+$vCenterIP = "10.254.254.77"
+$datacenterName = "PGD-JKT-vDC"
+$esxhost= Get-VMHost pgd-jkt-srd-svr-01.pegadaian.co.id
+$vmxFiles = @()
+$vmxFolders = Get-ChildItem -Path "vmstores:\$vCenterIP@443\$datacenterName\$TargetVMCenterDatastoreName\" | Where-Object { $_.Name -notin @(".sdd.sf", ".dvsData", ".vSphere-HA") -and $_.PSIsContainer}|Select-Object -ExpandProperty Name
+foreach ($folder in $vmxFolders){
+    $vmxFiles +=  Get-ChildItem -Path "vmstores:\$vCenterIP@443\$datacenterName\$TargetVMCenterDatastoreName\$folder\" -Filter "*.vmx"
+}
+$vmxFiles
+foreach ($vmx in $vmxFiles) {
+    $VM = New-VM -VMFilePath $vmx.DatastoreFullPath -Host $esxHost
+    $VM.Name
+    Write-Host "VM $VM registered successfully from: $($vmx.DatastoreFullPath)"
+}
+
+
+
+
+
+NEED TO ASSIGN PROPER PORTGROUP HERE BEFORE POWERING ON
+
+
+# Define VM Name
+$vmName = "VM-RESTEST-1"
+
+# Get the VM
+$vm = Get-VM -Name $vmName
+
+# Power On the VM
+Start-VM -VM $vm -Confirm:$false
+Get-VMQuestion | Set-VMQuestion -Confirm:$false –DefaultOption
+
+if ($vm.PowerState -eq "PoweredOn") {
+    Write-Host "✅ VM '$($vm.Name)' is already Powered On."
+} elseif ($vm.PowerState -eq "PoweredOff") {
+    Write-Host "⏹️ VM '$($vm.Name)' is Powered Off."
+} else {
+    Write-Host "⚠️ VM '$($vm.Name)' is in an unknown state: $($vm.PowerState)"
+}
+
+

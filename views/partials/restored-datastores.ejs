@@ -1,0 +1,48 @@
+<div class="tab-pane fade restored-datastores-container" id="restored-datastores">
+    <h3 class="title">Restored Datastores</h3>
+    <% if (restoredDatastores && restoredDatastores.length > 0) { %>
+        <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Datastore Name</th>
+                        <th>Canonical Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% restoredDatastores.forEach(ds => { %>
+                        <tr>
+                            <td><%= ds.Datastore %></td>
+                            <td><%= ds.CanonicalName %></td>
+                        </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        </div>
+    <% } else { %>
+        <p class="text-center">No restored datastores found.</p>
+    <% } %>
+</div>
+
+<style>
+    .restored-datastores-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .table-responsive {
+        overflow-x: auto;
+    }
+
+    .text-center {
+        text-align: center;
+    }
+
+</style>
+<script>
+
+</script>

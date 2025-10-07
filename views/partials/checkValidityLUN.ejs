@@ -1,0 +1,150 @@
+<h3>Check Validity LUN</h3>
+
+<div class="upload-container">
+   <button id="checkValidBtn" class=button onclick="checkValidLUN()">Check LUN</button>
+   <div id="loadingSpinnerValidity" class="spinner" style="display: none;"></div>
+   <button id="presentBtn" class=orangebutton onclick="presentLUN()">Present LUN as Datastore</button>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Volume Name</th>
+            <th>CanonicalName</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody id="validity-volume-list"></tbody>
+</table>
+<!-- <style>
+    .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: skyblue;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+</style> -->
+
+<script>
+    document.addEventListener("DOMContentLoaded", async () => {
+        console.log("🔄 Fetching Checked LUN on page load...");
+        await checkValidLUNFromDB();
+    });
+
+    async function checkValidLUNFromDB() {
+        const checkValidBtn = document.getElementById("checkValidBtn");
+        const loadingSpinner = document.getElementById("loadingSpinnerValidity");
+        const tableBody = document.getElementById("validity-volume-list");
+
+        // Disable button & show spinner
+        checkValidBtn.disabled = true;
+        loadingSpinner.style.display = "inline-block";
+
+        try {
+            const response = await fetch('/vsphere/checkedVolumes');
+            const data = await response.json();
+
+            tableBody.innerHTML = ""; // Clear table first
+
+            if (data.length === 0) {
+                // 🔥 Fallback Message if DB is Empty
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">
+                            No LUNs found in the database.
+                        </td>
+                    </tr>
+                `;
+                console.warn("⚠️ No LUNs found in DB.");
+            } else {
+                data.forEach(({ volume_name, canonical, status }) => {
+                    const newRow = `<tr>
+                        <td>${volume_name}</td>
+                        <td>${canonical || "-"}</td> <!-- Optional Canonical Name -->
+                        <td>${status}</td>
+                    </tr>`;
+                    tableBody.innerHTML += newRow;
+                });
+            }
+        } catch (err) {
+            console.error("❌ Fetch error:", err);
+            alert("❌ Error: Could not check LUN validity.");
+        } finally {
+            // Re-enable button & hide spinner
+            checkValidBtn.disabled = false;
+            loadingSpinner.style.display = "none";
+        }
+    }
+
+    async function checkValidLUN() {
+        const checkValidBtn = document.getElementById("checkValidBtn");
+        const loadingSpinner = document.getElementById("loadingSpinnerValidity");
+        const tableBody = document.getElementById("validity-volume-list");
+
+        // Disable button & show spinner
+        checkValidBtn.disabled = true;
+        loadingSpinner.style.display = "inline-block";
+
+        try {
+            const response = await fetch('/vsphere/check_valid_lun');
+            const data = await response.json();
+            
+            tableBody.innerHTML = ""; // Clear table
+            
+            data.forEach(({ volume_name, canonical, status }) => {
+                const newRow = `<tr>
+                    <td>${volume_name}</td>
+                    <td>${canonical}</td>
+                    <td>${status}</td>
+                </tr>`;
+                tableBody.innerHTML += newRow;
+            });
+        } catch (err) {
+            console.error("Fetch error:", err);
+            alert("❌ Error: Could not check LUN validity.");
+        } finally {
+            // Re-enable button & hide spinner
+            checkValidBtn.disabled = false;
+            loadingSpinner.style.display = "none";
+        }
+    }
+
+    async function presentLUN() {
+    try {
+        const presentBtn = document.getElementById("presentBtn");
+        const loadingSpinner = document.getElementById("loadingSpinnerValidity");
+
+        presentBtn.disabled = true;
+        loadingSpinner.style.display = "inline-block";
+        const response = await fetch('/vsphere/presentDatastoresResignatured', { method: 'POST' });
+        const data = await response.json();
+
+        alert("✅ Datastore presentation complete.");
+        
+        // Refresh presented datastores tab
+        await checkValidLUN();
+        refreshPresentedDatastores();
+
+        } catch (err) {
+            console.error("Fetch error:", err);
+            alert("❌ Error: Could not create datastore.");
+        } finally {
+        // Re-enable button & hide spinner
+            presentBtn.disabled = false;
+            loadingSpinner.style.display = "none";
+        }
+    }
+ 
+   
+
+  
+
+</script>

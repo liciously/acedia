@@ -1,0 +1,312 @@
+<h3>Registered VMs</h3>
+
+<div class="upload-container">
+    <button id="refreshVMsBtn" class="button" onclick="refreshVMs()">Refresh List</button>
+    <button id="commitSetNICBtn" class="orangebutton" onclick="commitChangeNICs()">Commit NIC</button>
+    <button id="reconfigBtn" class="orangebutton" onclick="reconfigNicAll()">Reconfigure All VM NIC</button>
+    <input type="file" id="csvVM" accept=".csv">
+    <button class="greenButton" id="uploadVMDataBtn">Upload CSV</button>
+</div>
+
+<div id="registered-vm-list"></div> <!-- Accordion Container -->
+
+<style>
+    .vm-entry {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: #f3f3f3;
+        padding: 10px;
+        margin-top: 5px;
+        border-radius: 5px;
+    }
+
+    .vm-info {
+        display: flex;
+        flex-grow: 1;
+        align-items: center;
+        gap: 20px;
+    }
+
+
+    .accordion {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        color: #007bff;
+        padding: 5px;
+        transition: 0.3s;
+        margin-left: auto;
+    }
+
+    .accordion:hover {
+        color: #0056b3;
+    }
+
+    .panel {
+        display: none;
+        background-color: #f9f9f9;
+        padding: 10px;
+        border-left: 3px solid #007bff;
+        border-radius: 5px;
+        margin-top: 5px;
+    }
+    .nic-dropdown {
+        padding: 5px;
+        margin: 0 5px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        background-color: #fff;
+        cursor: pointer;
+    }
+
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    console.log("🔄 Fetching Registered VM on page load...");
+    await refreshVMs();
+
+});
+
+document.getElementById("uploadVMDataBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("csvVM"); // Make sure the correct ID is used
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Please select a CSV file.");
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+        const text = e.target.result.trim();
+        const rows = text.split("\n").map(row => row.trim()).filter(row => row.length > 0); // Trim and filter empty lines
+
+        const vmData = [];
+                
+                // Start from index 1 to skip header
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const [vm_name, nic1_vlan, nic2_vlan] = row.split(",").map(col => col.trim());
+                    vmData.push({ vm_name, nic1_vlan, nic2_vlan });
+                }
+
+        console.log("Parsed CSV Data:", vmData);
+
+        try {
+            const response = await fetch("/vsphere/uploadVMData", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(vmData),
+            });
+
+            const result = await response.json();
+            alert(result.message);
+            await refreshVMs();
+        } catch (err) {
+            console.error("Upload Error:", err);
+            alert("❌ Failed to upload CSV data.");
+        }
+    };
+
+    reader.onerror = () => {
+        console.error("Error reading the file");
+        alert("❌ Could not read CSV file.");
+    };
+
+    reader.readAsText(file);
+});
+
+
+
+let nicOptions = [];
+
+async function fetchNICOptions() {
+    try {
+        const response = await fetch('/vsphere/nicOptions');
+        nicOptions = await response.json();
+        console.log("NIC Options:", nicOptions);
+    } catch (err) {
+        console.error("Error fetching NIC options:", err);
+    }
+}
+
+/*async function refreshVMs() {
+    await fetchNICOptions(); // Fetch NIC options before rendering
+    const container = document.getElementById("registered-vm-list");
+
+    try {
+        const response = await fetch('/vsphere/registeredVMs');
+        const data = await response.json();
+        console.log(data);
+
+        container.innerHTML = ""; // Clear previous data
+
+        data.forEach(({ vm_name, vmx_path, status, nic1_vlan, nic2_vlan }) => {
+
+            let nicOptionsHTML = nicOptions.map(vlan => `
+                    <option value="${vlan}" ${vlan === nic1_vlan ? 'selected' : ''}>${vlan}</option>
+                `).join("");
+
+            let nicOptionsHTML2 = nicOptions.map(vlan => `
+                    <option value="${vlan}" ${vlan === nic2_vlan ? 'selected' : ''}>${vlan}</option>
+                `).join("");
+
+
+            const vmHTML = `
+                <div class="vm-entry">
+                    <div class="vm-info">
+                        <input type="checkbox" class="vm-checkbox" value="${vmx_path}">
+                        <strong>${vm_name}</strong> 
+                        <span>${status}</span>
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC1 VLAN, Current - "${nic1_vlan}"</option>
+                            ${nicOptionsHTML}
+                        </select>
+
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC2 VLAN, Current - "${nic2_vlan}"</option>
+                            ${nicOptionsHTML2}
+                        </select>
+
+                    </div>
+                </div>
+                <div class="panel">
+                    <p>Path: ${vmx_path}</p>
+                </div>`;
+            container.innerHTML += vmHTML;
+        });
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("❌ Could not fetch Registered VMs.");
+    }
+}*/
+
+async function refreshVMs() {
+    await fetchNICOptions();
+
+    const container = document.getElementById("registered-vm-list");
+
+    try {
+        const [registeredResponse, lastConfiguredResponse] = await Promise.all([
+            fetch('/vsphere/registeredVMs'),
+            fetch('/vsphere/lastConfiguredVMs')
+        ]);
+
+        const registeredVMs = await registeredResponse.json();
+        const lastConfiguredVMs = await lastConfiguredResponse.json();
+
+        console.log("Registered VMs:", registeredVMs);
+        console.log("Last Configured VMs:", lastConfiguredVMs);
+
+        container.innerHTML = ""; // Clear previous data
+
+        registeredVMs.forEach(({ vm_name, vmx_path, status, nic1_vlan, nic2_vlan }) => {
+            const lastConfig = lastConfiguredVMs.find(vm => vm.vm_name === vm_name);
+
+            let nicOptionsHTML = nicOptions.map(vlan => `
+                    <option value="${vlan}" ${vlan === nic1_vlan ? 'selected' : ''}>${vlan}</option>
+                `).join("");
+
+            let nicOptionsHTML2 = nicOptions.map(vlan => `
+                    <option value="${vlan}" ${vlan === nic2_vlan ? 'selected' : ''}>${vlan}</option>
+                `).join("");
+
+            const lastNic1 = lastConfig ? lastConfig.nic1_vlan : "N/A";
+            const lastNic2 = lastConfig ? lastConfig.nic2_vlan : "N/A";
+
+            const vmHTML = `
+                <div class="vm-entry">
+                    <div class="vm-info">
+                        <input type="checkbox" class="vm-checkbox" value="${vmx_path}">
+                        <strong>${vm_name}</strong> 
+                        <span>${status}</span>
+
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC1 VLAN, Current - "${nic1_vlan}"</option>
+                            ${nicOptionsHTML}
+                        </select>
+                        <span>Last Configured: ${lastNic1}</span>
+
+                        <select class="nic-dropdown" data-vm="${vmx_path}">
+                            <option value="" disabled>Select NIC2 VLAN, Current - "${nic2_vlan}"</option>
+                            ${nicOptionsHTML2}
+                        </select>
+                        <span>Last Configured: ${lastNic2}</span>
+                    </div>
+                </div>
+            `;
+            container.innerHTML += vmHTML;
+        });
+    } catch (err) {
+        console.error("Fetch error:", err);
+        alert("❌ Could not fetch Registered VMs.");
+    }
+}
+
+
+async function commitChangeNICs() {
+    const vmEntries = document.querySelectorAll(".vm-entry");
+    let changedNICs = [];
+
+    vmEntries.forEach(entry => {
+        const checkbox = entry.querySelector(".vm-checkbox");
+        const vmxPath = checkbox.value;
+        const selects = entry.querySelectorAll(".nic-dropdown");
+        const nic1_vlan = selects[0].value;
+        const nic2_vlan = selects[1].value;
+
+        changedNICs.push({
+            vmx_path: vmxPath,
+            nic1_vlan,
+            nic2_vlan
+        });
+    });
+
+    console.log("🔄 Sending NIC changes:", changedNICs);
+
+    try {
+        const response = await fetch("/vsphere/commitNICs", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ vms: changedNICs })
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            alert("✅ NIC VLANs updated successfully.");
+            await refreshVMs(); // Reload the updated list
+        } else {
+            alert("❌ Failed to update NIC VLANs: " + result.error);
+        }
+    } catch (err) {
+        console.error("Error committing NIC changes:", err);
+        alert("❌ Network error occurred.");
+    }
+}
+
+async function reconfigNicAll() {
+    if (!confirm("Are you sure you want to reconfigure all VMs?")) return;
+
+    try {
+        const response = await fetch("/vsphere/reconfigNicAll", {
+            method: "POST",
+        });
+
+        const result = await response.json();
+        alert(result.message);
+    } catch (err) {
+        console.error("Reconfiguration Error:", err);
+        alert("❌ Failed to reconfigure all VMs.");
+    }
+        await refreshVMs();
+}
+
+
+
+</script>

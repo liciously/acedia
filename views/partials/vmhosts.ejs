@@ -1,0 +1,21 @@
+<h3>ESXi Hosts</h3>
+
+<div class="upload-container">
+    <button id= reloadBtn class="button" onclick="fetchVMHosts(true)">Reload ESXi Hosts</button>
+    <button id=rescanBtn class="button" onclick="rescanStorage(true)">Rescan Storage</button>
+    <div id="loadingSpinner" class="spinner" style="display: none;"></div>
+</div>
+
+
+<table>
+    <thead>
+        <tr>
+            <th>Host Name</th>
+            <th>Status</th>
+            <th>CPU</th>
+            <th>Memory (GB)</th>
+        </tr>
+    </thead>
+    <tbody id="vmhost-list"></tbody>
+</table>
+

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlashArray Dashboard</title>
+    <a class="switch-button" href="/vsphere">vSphere Dashboard</a>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+    <!-- <link rel="stylesheet" href="/css/bootstrap.css"> -->
+    <!-- <script src="/js/bootstrap.bundle.js"></script> -->
+
+    <!-- <link rel="stylesheet" href="/SBAdmin/css/sb-admin-2.css"> -->
+    <style>
+
+        .switch-button {
+            display: inline-block;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            text-decoration: none;
+            color: #ffffff;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            border-radius: 8px;
+            transition: all 0.3s ease-in-out;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .switch-button:hover {
+            background: linear-gradient(135deg, #0056b3, #004494);
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .switch-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        header {
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #333;
+        }
+        .button-container {
+            display: flex;
+            align-items: center; /* Keeps them vertically aligned */
+            gap: 8px; /* Adds spacing between input and button */
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .pure-storage-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            padding: 15px 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            flex-wrap: wrap;
+        }
+
+        .pure-storage-info img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+        }
+
+        .pure-storage-info .info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            flex: 1;
+        }
+
+        .info-group {
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            background: #ffffff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .info-group span {
+            font-size: 12px;
+            color: #777;
+        }
+
+        .info-group strong {
+            font-size: 14px;
+            color: #333;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f4f4f4;
+            font-weight: bold;
+        }
+
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #fff;
+            min-width: 200px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            z-index: 1;
+        }
+
+        .dropdown:hover .dropdown-content {
+            display: block;
+        }
+    
+        .protection-group-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .protection-group-entry {
+            padding: 10px;
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .pg-name {
+            font-size: 16px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .snapshots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .snapshot-entry {
+            font-size: 14px;
+            color: #555;
+        }
+
+        .no-snapshots {
+            font-size: 14px;
+            color: #999;
+        }
+
+        .delete-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s ease-in-out;
+        }
+
+        .delete-btn:hover {
+            background-color: #c0392b;
+            transform: scale(1.05);
+        }
+
+        .delete-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Fade-out animation when removing */
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-10px); }
+        }
+        .add-btn {
+            display: block;
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #3498db;
+            color: white;
+            text-align: center;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+
+        .add-btn:hover {
+            background-color: #2980b9;
+        }
+
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            background: #ffffff;
+            padding: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            transition: 0.3s;
+        }
+
+        .tab-button.active {
+            border-bottom: 3px solid #3498db;
+            color: #3498db;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    
+    </style>
+</head>
+
+<body>
+    <header>
+        <%- include('partials/pure-storage-info', { flashArrayData: flashArrayData }) %>
+    </header>
+    <div class="tabs">
+        <button class="tab-button active" onclick="openTab('protection-groups', event)">Protection Groups</button>
+        <button class="tab-button" onclick="openTab('restored-volumes', event)">Restored Volumes</button>
+    </div>
+
+    <div class="tab-content active" id="protection-groups">
+        <%- include('partials/protection-groups', { protectionGroups: protectionGroups }) %>
+    </div>
+
+    <div class="tab-content" id="restored-volumes">
+        <%- include('partials/restored-volumes') %>
+    </div>
+
+
+
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+             const urlParams = new URLSearchParams(window.location.search);
+             if (urlParams.get('alert') === 'exists') {
+                 alert("Protection Group '" + urlParams.get('name') + "' already exists!");
+                 
+                 // Clean the URL
+                 const newUrl = window.location.pathname; // Removes query params
+                 history.replaceState(null, "", newUrl);
+             }
+         });
+
+         document.addEventListener("DOMContentLoaded", function () {
+                 const urlParams = new URLSearchParams(window.location.search);
+                 if (urlParams.get('alert') === 'importSuccess') {
+                     alert("Successfully imported protection groups: " + urlParams.get('names'));
+                     
+                     // Clean the URL after the alert
+                     const newUrl = window.location.pathname; // Removes query params
+                     history.replaceState(null, "", newUrl);
+                 }
+             });
+
+        function toggleTable() {
+            const table = document.getElementById('pure-storage-table');
+            table.classList.toggle('hidden');
+        }
+
+
+
+        let tabLoaded = { "restored-volumes": true };
+
+        function openTab(tabId, event) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+
+            // Remove active class from buttons
+            document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+
+            // Show selected tab
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+
+            // Load data only the first time the tab is opened
+            if (!tabLoaded[tabId]) {
+                if (tabId === 'restored-volumes') {
+                    fetchRestoredVolumesOld();
+                }
+                tabLoaded[tabId] = true; // Mark as loaded
+            }
+        }
+
+        function deleteVolume(volumeName) {
+            if (confirm(`Are you sure you want to delete volume: ${volumeName}?`)) {
+                fetch('/protection/delete-restored-volume', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ volume_name: volumeName })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert("Volume deleted successfully!");
+                        location.reload(); // Reload the page to update the table
+                    } else {
+                        alert("Error: " + data.error);
+                    }
+                })
+                .catch(err => console.error("Delete error:", err));
+            }
+        }
+
+    </script>
+</body>
+
+</html>

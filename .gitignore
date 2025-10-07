@@ -1,0 +1,18 @@
+﻿# Ignore environment files
+*.env
+
+# Ignore database files
+*.db
+
+# Ignore zip archives
+*.zip
+
+# Node.js dependencies (if applicable)
+node_modules/
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

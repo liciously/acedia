@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Static Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Static Dashboard</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Array</th>
+          <th>OS</th>
+          <th>Version</th>
+          <th>Alerts</th>
+          <th>Data Reduction</th>
+          <th>Capacity</th>
+          <th>Free Space</th>
+          <th>Utilization %</th>
+        </tr>
+      </thead>
+      <tbody id="dashboard-data">
+        <!-- Static data will be populated here -->
+      </tbody>
+    </table>
+  </div>
+  <script>
+    // Hardcoded static values for testing
+    const staticData = [
+      {
+        array: "PGD-JKT-DEV-STR01",
+        os: "Purity//FA",
+        version: "6.3.15",
+        alerts: "-",
+        dataReduction: "5.0 : 1",
+        capacity: "145.0 TiB",
+        freeSpace: "127.9 TiB",
+        utilization: 11.8,
+      },
+      {
+        array: "PGD-SIN-BCK-STR02",
+        os: "Purity//FA",
+        version: "6.3.10",
+        alerts: "2",
+        dataReduction: "4.8 : 1",
+        capacity: "100.0 TiB",
+        freeSpace: "85.0 TiB",
+        utilization: 15.0,
+      },
+    ];
+
+    const dashboard = document.getElementById("dashboard-data");
+
+    // Populate the table with static values
+    staticData.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.array}</td>
+        <td>${row.os}</td>
+        <td>${row.version}</td>
+        <td>${row.alerts}</td>
+        <td>${row.dataReduction}</td>
+        <td>${row.capacity}</td>
+        <td>${row.freeSpace}</td>
+        <td>
+          <div class="capacity-bar">
+            <div class="capacity-bar-fill" style="width: ${row.utilization}%; background-color: #4caf50;"></div>
+          </div>
+          ${row.utilization}%
+        </td>
+      `;
+      dashboard.appendChild(tr);
+    });
+  </script>
+</body>
+</html>

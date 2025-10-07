@@ -1,0 +1,200 @@
+<div id="restored-volumes" class="tab-pane fade restored-volumes-container">
+    <h2 class="title">Restored Volumes</h2>
+    <div class="button-container">
+        <button class="reload-btn" id="reload-btn" onclick="fetchRestoredVolumes()">🔄 Reload</button>
+        <!-- <button class="reload-btn" id="destroyVolume-btn" onclick="destroyRestoredVolumes()">🔄 Destroy </button> -->
+        <button id="exportCSV" class="export-btn">Export to CSV</button>
+    </div>
+   
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Select</th>
+                    <th>Volume Name</th>
+                    <th>Snapshot Name</th>
+                    <th>Serial Number</th>
+                    <th>LUN</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="restoredVolumesBody">
+                <!-- Data will be injected here -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<style>
+    .restored-volumes-container {
+        max-width: 2000px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .reload-btn {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-bottom: 10px;
+        display: block;
+    }
+
+    .reload-btn:hover {
+        background-color: #2980b9;
+    }
+
+    .restored-volumes-table {
+        max-width: 2000px;
+        margin: 0 auto;
+    }
+    .missing { color: red; }
+    .available { color: green; }
+    .export-btn {
+        background-color: #28a745;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-bottom: 10px;
+        display: block;
+    }
+
+    .export-btn:hover {
+        background-color: #218838;
+    }
+
+</style>
+<script>
+document.getElementById("exportCSV").addEventListener("click", async function() {
+    try {
+        const response = await fetch("/protection/export-restored-volumes");
+        if (!response.ok) throw new Error("Failed to download CSV");
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "restored_volumes.csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch (error) {
+        console.error("Error exporting CSV:", error);
+    }
+});
+
+async function loadRestoredVolumes() {
+    try {
+        const response = await fetch("/protection/restored-volumes");
+        const result = await response.json();
+
+        if (!result.success) throw new Error(result.error);
+
+        const tbody = document.getElementById("restoredVolumesBody");
+        tbody.innerHTML = ""; // Clear table before inserting new data
+
+        result.data.forEach(volume => {
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td><input type="checkbox" name="selectedVolumes" value="${volume.volume_name}"></td>
+                <td>${volume.volume_name}</td>
+                <td>${volume.snapshot_name || "N/A"}</td>
+                <td class="${volume.serial ? "available" : "missing"}">${volume.serial || "N/A"}</td>
+                <td class="${volume.lun !== null ? "available" : "missing"}">${volume.lun !== null ? volume.lun : "N/A"}</td>
+                <td>${volume.status}</td>
+                <td>
+                    ${volume.status === "Missing or Deleted" ? 
+                        `<button class="delete-btn" onclick="deleteVolume('${volume.volume_name}')">Delete</button>` 
+                        : ""}
+                </td>
+            `;
+
+            tbody.appendChild(row);
+        });
+    } catch (error) {
+        console.error("Error loading restored volumes:", error);
+    }
+}
+async function fetchRestoredVolumes() {
+    try {
+        console.log("🔄 Reloading restored volumes...");
+        const response = await fetch("/protection/reload-restored-volumes");
+        const result = await response.json();
+
+        if (!result.success) throw new Error(result.error);
+
+        const tbody = document.getElementById("restoredVolumesBody");
+        tbody.innerHTML = ""; // Clear table before inserting new data
+
+        result.data.forEach(volume => {
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td><input type="checkbox" name="selectedVolumes" value="${volume.volume_name}"></td>
+                <td>${volume.volume_name}</td>
+                <td>${volume.snapshot_name || "N/A"}</td>
+                <td class="${volume.serial ? "available" : "missing"}">${volume.serial || "N/A"}</td>
+                <td class="${volume.lun !== null ? "available" : "missing"}">${volume.lun !== null ? volume.lun : "N/A"}</td>
+                <td class="${volume.status === "Missing or Deleted" ? "missing" : "available"}">
+                    ${volume.status}
+                </td>
+                <td>
+                    ${volume.status === "Missing or Deleted" ? 
+                        `<button class="delete-btn" onclick="deleteVolume('${volume.volume_name}')">Delete</button>` 
+                        : ""}
+                </td>
+            `;
+
+            tbody.appendChild(row);
+        });
+
+        console.log("✅ Restored volumes successfully reloaded.");
+
+    } catch (error) {
+        console.error("❌ Error reloading restored volumes:", error);
+    }
+}
+
+async function destroyRestoredVolumes(){
+    alert("This will Disconnect and Destroy the All Listed Volumes, Ensures the Datastores Related to Volumes Here already Unmounted Properly!!");
+    if (!confirm("Are you sure you want to Destroy All Volumes?")) return;
+
+
+}
+
+function deleteVolume(volumeName) {
+    if (confirm(`Are you sure you want to delete volume: ${volumeName}?`)) {
+        fetch('/protection/delete-restored-volume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ volume_name: volumeName })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert("Volume deleted successfully!");
+                location.reload(); // Reload the page to update the table
+            } else {
+                alert("Error: " + data.error);
+            }
+        })
+        .catch(err => console.error("Delete error:", err));
+    }
+}
+
+// Load restored volumes on page load
+document.addEventListener("DOMContentLoaded", loadRestoredVolumes);
+
+</script>
+

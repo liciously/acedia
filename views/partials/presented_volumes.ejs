@@ -1,0 +1,118 @@
+<h3>Presented Volumes</h3>
+<div class="upload-container">
+    <input type="file" id="csvFile" accept=".csv">
+    <button class="greenButton" id="uploadBtn">Upload CSV</button>
+    <button class="redButton" id="reinitBtn" onclick="reinitializeTable()">Reinitialize Table</button>
+</div>
+<table>
+    <thead>
+        <tr>
+            <th>Volume Name</th>
+            <th>Serial</th>
+            <th>LUN</th>
+        </tr>
+    </thead>
+    <tbody id="presented-volume-list"></tbody>
+</table>
+
+<script>
+document.getElementById('uploadBtn').addEventListener('click', function () {
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Please select a CSV file.");
+        return;
+    }
+
+    console.log("File selected:", file.name);
+
+    const reader = new FileReader();
+    
+    reader.onload = function (e) {
+        console.log("File read successfully");
+
+        const text = e.target.result.trim(); // Trim to avoid empty lines
+        console.log("Raw file content:", text);
+
+        const rows = text.split("\n").map(row => 
+            row.split(",").map(value => value.trim().replace(/^"|"$/g, "")) // Trim and remove quotes
+        );
+        console.log("Parsed CSV rows:", rows);
+
+        const tableBody = document.getElementById('presented-volume-list');
+        tableBody.innerHTML = ""; // Clear existing rows
+
+        rows.slice(1).forEach(row => {
+            if (row.length === 3 && row[0] && row[1] && row[2]) { // Ensure valid data
+                const [volumeName, serial, lun] = row;
+                console.log("Processing row:", { volumeName, serial, lun });
+
+                const newRow = document.createElement('tr');
+                newRow.innerHTML = `<td>${volumeName}</td><td>${serial}</td><td>${lun}</td>`;
+                tableBody.appendChild(newRow);
+
+                // Send data to the server
+                fetch('/vsphere/presented_volumes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ volumeName, serial, lun })
+                })
+                .then(response => response.text()) // Get response as text first
+                .then(data => console.log("Raw server response:", data))
+                .catch(err => console.error("Fetch error:", err));
+            } else {
+                console.warn("Skipping invalid row:", row);
+            }
+        });
+    };
+
+    reader.onerror = function () {
+        console.error("Error reading file");
+    };
+
+    reader.readAsText(file);
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+    fetch('/vsphere/presented_volumes')
+        .then(response => response.json())
+        .then(data => {
+            const tableBody = document.getElementById('presented-volume-list');
+            tableBody.innerHTML = ""; // Clear table
+
+            data.forEach(({ volume_name, serial, lun }) => {
+                const newRow = `<tr>
+                    <td>${volume_name}</td>
+                    <td>${serial}</td>
+                    <td>${lun}</td>
+                </tr>`;
+                tableBody.innerHTML += newRow;
+            });
+        })
+        .catch(err => console.error("Fetch error:", err));
+});
+
+async function reinitializeTable() {
+    try {
+        const reinitBtn = document.getElementById("reinitBtn");
+
+        reinitBtn.disabled = true;
+        const response = await fetch('/vsphere/presented_volumes', { method: 'DELETE' });
+        const data = await response.json();
+
+        alert("✅ Datastore Reinitialize complete.");
+
+        } catch (err) {
+            console.error("Fetch error:", err);
+            alert("❌ Error: Could not Reinitialize.");
+        } finally {
+        // Re-enable button & hide spinner
+
+            reinitBtn.disabled = false;
+            window.location.reload();
+        }
+
+    }
+
+</script>

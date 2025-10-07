@@ -1,0 +1,35 @@
+<div class="pure-storage-info" onclick="toggleTable()">
+    <img src="/images/puresmall.png" alt="Pure Storage Logo">
+    <% flashArrayData.forEach(array => { %>
+    <div class="info">
+        <div class="info-group">
+            <span>Storage Name</span>
+            <strong><%= array.name || "N/A" %></strong>
+        </div>
+        <div class="info-group">
+            <span>Status</span>
+            <strong><%= array.id ? "Connected" : "Disconnected" %></strong>
+        </div>
+        <div class="info-group">
+            <span>Capacity</span>
+            <strong><%= (array.capacity / (1024 ** 4)).toFixed(2) %> TiB</strong>
+        </div>
+        <div class="info-group">
+            <span>Data Reduction</span>
+            <strong><%= array.space.data_reduction.toFixed(2) %>x</strong>
+        </div>
+        <div class="info-group">
+            <span>Total Provisioned</span>
+            <strong><%= (array.space.total_provisioned / (1024 ** 4)).toFixed(2) %> TiB</strong>
+        </div>
+        <div class="info-group">
+            <span>Total Effective</span>
+            <strong><%= (array.space.total_effective / (1024 ** 4)).toFixed(2) %> TiB</strong>
+        </div>
+        <div class="info-group">
+            <span>Version</span>
+            <strong><%= array.version %></strong>
+        </div>
+    </div>
+    <% }) %>
+</div>
