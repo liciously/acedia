@@ -5,6 +5,7 @@ require("dotenv").config({ path: "./ini.env" });
 const db = require("../config/vsphereDB");  // Import SQLite setup
 const multer = require("multer");
 const csvParser = require("csv-parser");
+const path = require("path");
 const fs = require("fs");
 const upload = multer({ dest: "../uploads/" });
 
@@ -316,6 +317,51 @@ router.delete('/presented_volumes', async (req, res) => {
         res.status(500).send("Database Error");
     }
 });
+
+const usersDb = require("../config/database");      // users.db
+const vsphereDb = require("../config/vspheredb");   // vsphere.db
+
+// 🔁 Sync restored_volumes → presented_volumes
+router.post("/sync_presented_volumes", (req, res) => {
+    // First, get all restored_volumes from users.db
+    usersDb.all("SELECT volume_name, serial, lun FROM restored_volumes", (err, rows) => {
+        if (err) {
+            console.error("Error reading restored_volumes:", err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
+
+        if (!rows || rows.length === 0) {
+            return res.json({ success: true, inserted: 0, message: "No data found in restored_volumes." });
+        }
+
+        let insertedCount = 0;
+        let completed = 0;
+
+        rows.forEach(({ volume_name, serial, lun }) => {
+            const insertQuery = `
+                INSERT OR IGNORE INTO presented_volumes (volume_name, serial, lun)
+                VALUES (?, ?, ?)
+            `;
+            vsphereDb.run(insertQuery, [volume_name, serial, lun], function (err) {
+                completed++;
+                if (!err && this.changes > 0) {
+                    insertedCount++;
+                }
+                if (err) console.error(`Insert failed for ${serial}:`, err.message);
+
+                // Once all rows are processed, send response
+                if (completed === rows.length) {
+                    return res.json({
+                        success: true,
+                        inserted: insertedCount,
+                        totalSource: rows.length
+                    });
+                }
+            });
+        });
+    });
+});
+
 
 
 

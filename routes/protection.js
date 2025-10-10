@@ -142,11 +142,24 @@ router.post('/delete-protection-group/:id', (req, res) => {
 router.post('/restore-snapshot', async (req, res) => {
     if (!req.session.user) return res.redirect('/');
 
-    const { snapshotName, newVolumeName } = req.body;
+    let { snapshotName, newVolumeName } = req.body;
     console.log(snapshotName, newVolumeName);
 
-    if (!snapshotName || !newVolumeName) {
+    /*if (!snapshotName || !newVolumeName) {
         return res.status(400).json({ error: "Snapshot name and new volume name are required" });
+    }*/
+    if (!snapshotName || snapshotName.trim() === "") {
+        return res.status(400).json({ error: "Snapshot name is required" });
+    }
+
+    // ✅ Auto-generate newVolumeName if not provided
+    if (!newVolumeName || newVolumeName.trim() === "") {
+        // Get part after the last dot
+        const baseName = snapshotName.split('.').pop();
+        // Format date suffix: YYYYMMDD_HHmm
+        const dateSuffix = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
+        newVolumeName = `${baseName}_${dateSuffix}`;
+        console.log(`Auto-generated newVolumeName: ${newVolumeName}`);
     }
 
     console.log(`Received restore request for snapshot "${snapshotName}" as volume "${newVolumeName}"`);

@@ -36,6 +36,7 @@ app.use((req, res, next) => {
         console.log(envPath);
         dotenv.config({ path: envPath, override: true });
         console.log('Pure Storage IP:', process.env.PURE_STORAGE_IP);
+        console.log('vCenter IP:', process.env.VCENTER_IP);
         console.log(`🔄 Loaded Environment: ${req.session.environment}`);
     }
     next();

@@ -3,6 +3,7 @@
     <input type="file" id="csvFile" accept=".csv">
     <button class="greenButton" id="uploadBtn">Upload CSV</button>
     <button class="redButton" id="reinitBtn" onclick="reinitializeTable()">Reinitialize Table</button>
+    <button class="orangebutton" id="syncBtn" onclick="syncTable()">Sync Table</button>
 </div>
 <table>
     <thead>
@@ -114,5 +115,30 @@ async function reinitializeTable() {
         }
 
     }
+
+async function syncTable() {
+    const syncBtn = document.getElementById("syncBtn");
+    syncBtn.disabled = true;
+    syncBtn.innerText = "Syncing...";
+
+    try {
+        const res = await fetch("/vsphere/sync_presented_volumes", { method: "POST" });
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`✅ Sync complete. Inserted ${data.inserted} new row(s).`);
+            window.location.reload(); // reload table to show updated data
+        } else {
+            alert("❌ Sync failed: " + data.error);
+        }
+    } catch (err) {
+        console.error("Sync request failed:", err);
+        alert("❌ Request failed: " + err.message);
+    } finally {
+        syncBtn.disabled = false;
+        syncBtn.innerText = "Sync Table";
+    }
+}
+
 
 </script>
