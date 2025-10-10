@@ -1,8 +1,8 @@
 const express = require('express');
 const db = require('../config/database');
-const { getApiToken, getAuthToken } = require('../services/flasharray');
-const { restoreVolumeFromSnapshot } = require('../services/flasharray');
-const { connectVolumeToHostGroup } = require('../services/flasharray');
+const { getApiToken, getAuthToken } = require('../services/flashArray');
+const { restoreVolumeFromSnapshot } = require('../services/flashArray');
+const { connectVolumeToHostGroup } = require('../services/flashArray');
 const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
@@ -44,7 +44,8 @@ router.post('/import-csv', upload.single('csvFile'), (req, res) => {
             }
 
             // Filter out already existing protection groups from the database
-            const query = `SELECT name FROM protection_groups WHERE name IN (${protectionGroups.map(() => '?').join(',')})`;
+            const tableName = db.getProtectionTableName(req.session && req.session.environment);
+            const query = `SELECT name FROM ${tableName} WHERE name IN (${protectionGroups.map(() => '?').join(',')})`;
             db.all(query, protectionGroups, (err, existingGroups) => {
                 if (err) {
                     console.error('Error checking existing protection groups:', err);
@@ -58,9 +59,9 @@ router.post('/import-csv', upload.single('csvFile'), (req, res) => {
                     return res.status(400).send('All protection groups already exist.');
                 }
 
-                // Insert new protection groups into the database
+                // Insert new protection groups into the database (per-env)
                 const placeholders = newGroups.map(() => '(?)').join(',');
-                db.run(`INSERT INTO protection_groups (name) VALUES ${placeholders}`, newGroups, (err) => {
+                db.run(`INSERT INTO ${tableName} (name) VALUES ${placeholders}`, newGroups, (err) => {
                     if (err) {
                         console.error('Error inserting CSV data:', err);
                         return res.status(500).send('Error inserting CSV data.');
@@ -85,8 +86,9 @@ router.post('/add-protection-group', async (req, res) => {
     const { name } = req.body;
     console.log(`Received request to add Protection Group: ${name}`);
 
+    const tableName = db.getProtectionTableName(req.session && req.session.environment);
     // Check if the protection group already exists
-    db.get(`SELECT * FROM protection_groups WHERE name = ?`, [name], async (err, row) => {
+    db.get(`SELECT * FROM ${tableName} WHERE name = ?`, [name], async (err, row) => {
         if (err) {
             console.error("Error checking protection group:", err);
             return res.status(500).send("Internal server error");
@@ -99,7 +101,7 @@ router.post('/add-protection-group', async (req, res) => {
         }
 
     // Insert into DB first
-    db.run(`INSERT INTO protection_groups (name) VALUES (?)`, [name], async function (err) {
+    db.run(`INSERT INTO ${tableName} (name) VALUES (?)`, [name], async function (err) {
         if (err) {
             console.error("Error inserting protection group:", err);
             return res.status(500).send("Internal server error");
@@ -126,7 +128,8 @@ router.post('/delete-protection-group/:id', (req, res) => {
     if (!req.session.user) return res.redirect('/');
     console.log(`Received request to delete Protection Group ID: ${req.params.id}`);
 
-    db.run('DELETE FROM protection_groups WHERE id = ?', [req.params.id], (err) => {
+    const tableName = db.getProtectionTableName(req.session && req.session.environment);
+    db.run(`DELETE FROM ${tableName} WHERE id = ?`, [req.params.id], (err) => {
         if (err) {
             console.error("Error deleting protection group:", err);
             return res.status(500).send("Internal server error");
@@ -404,8 +407,9 @@ router.get('/protection-groups/snapshots', async (req, res) => {
 
     console.log("Fetching snapshots for all Protection Groups...");
 
-    // Fetch all protection groups from the database
-    db.all('SELECT name FROM protection_groups', async (err, rows) => {
+    // Fetch all protection groups from the database (environment-specific)
+    const tableName = db.getProtectionTableName(req.session && req.session.environment);
+    db.all(`SELECT name FROM ${tableName}`, async (err, rows) => {
         if (err) {
             console.error("Error fetching protection groups from database:", err);
             return res.status(500).send("Internal server error");

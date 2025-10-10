@@ -15,7 +15,8 @@ router.get('/dashboard', async (req, res) => {
         const flashArrayData = flashArrayDataItems.items;
 
 
-        db.all('SELECT * FROM protection_groups', async (err, protectionGroups) => {
+        const tableName = db.getProtectionTableName(req.session && req.session.environment);
+        db.all(`SELECT * FROM ${tableName}`, async (err, protectionGroups) => {
             if (err) return res.status(500).send("Internal server error");
 
             const snapshots = {};
