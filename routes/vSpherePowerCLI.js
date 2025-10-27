@@ -1,8 +1,8 @@
 const express = require("express");
 const { spawn } = require("child_process");
-require("dotenv").config({ path: "./ini.env" });
+const dotenv = require('dotenv');
 
-const db = require("../config/vsphereDB");  // Import SQLite setup
+const db = require("../config/vspheredb");  // Import SQLite setup (use lowercase module name)
 const multer = require("multer");
 const csvParser = require("csv-parser");
 const path = require("path");
@@ -11,6 +11,20 @@ const upload = multer({ dest: "../uploads/" });
 
 
 const router = express.Router();
+
+// Dynamic environment loader: load the selected env file per request
+router.use((req, res, next) => {
+    try {
+        if (req && req.session && req.session.environment) {
+            const envPath = `./${req.session.environment}.env`;
+            console.log(`vSphere: loading env -> ${envPath}`);
+            dotenv.config({ path: envPath, override: true });
+        }
+    } catch (err) {
+        console.error('Error loading environment file for vSphere routes:', err);
+    }
+    next();
+});
 
 
 router.get("/", (req, res) => {
@@ -22,14 +36,24 @@ router.get("/", (req, res) => {
     });
 });
 
-// Load vCenter credentials
-const vCenterIP = process.env.VCENTER_IP;
-const vCenterUser = process.env.VCENTER_USER;
-const vCenterPass = process.env.VCENTER_PASS;
-const vCenterDC = process.env.VCENTER_DATACENTER;
+function runPowerCLICommand(command, options, callback) {
+    // Flexible signature:
+    // runPowerCLICommand(command, callback) OR runPowerCLICommand(command, options, callback)
+    if (typeof options === 'function') {
+        callback = options;
+        options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+    }
 
-function runPowerCLICommand(command, callback) {
+    // options: { vCenterIP, vCenterUser, vCenterPass }
     console.log("⚡ Running PowerCLI Command:\n", command);
+
+    const vCenterIP = options && options.vCenterIP ? options.vCenterIP : '';
+    const vCenterUser = options && options.vCenterUser ? options.vCenterUser : '';
+    const vCenterPass = options && options.vCenterPass ? options.vCenterPass : '';
 
     const fullCommand = `
         Set-PowerCLIConfiguration -DefaultVIServerMode Single -Confirm:\$false | Out-Null;
@@ -41,7 +65,6 @@ function runPowerCLICommand(command, callback) {
     `;
 
     const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", fullCommand]);
-
     let output = "";
     let error = "";
 
@@ -69,10 +92,11 @@ function runPowerCLICommand(command, callback) {
 // Get list of ESXi Hosts
 router.get("/vmhosts", (req, res) => {
     const forceRefresh = req.query.forceRefresh === "true"; // Check if reload is triggered
+    const tableName = db.getVMHostsTableName(req.session && req.session.environment);
 
     if (!forceRefresh) {
         // Normal case: Check if DB has existing data
-        db.all("SELECT name, connection_state, cpu, memory FROM vmhosts", (err, rows) => {
+        db.all(`SELECT name, connection_state, cpu, memory FROM ${tableName}`, (err, rows) => {
             if (err) {
                 return res.json({ success: false, error: "Database query failed." });
             }
@@ -82,23 +106,29 @@ router.get("/vmhosts", (req, res) => {
             }
 
             // If no data exists, proceed to PowerCLI execution
-            vmHostsFromPowerCLI(res);
+            vmHostsFromPowerCLI(res, tableName);
         });
     } else {
         // Forced reload: Bypass DB and fetch fresh data from PowerCLI
-        vmHostsFromPowerCLI(res);
+        vmHostsFromPowerCLI(res, tableName);
     }
 });
 
-function vmHostsFromPowerCLI(res){
+function vmHostsFromPowerCLI(res, tableName = 'vmhosts'){
+    const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
     const command = `
-        $vmHosts = Get-Cluster -Name PGD-JKT-SRD-01 | Get-VMHost | 
+        $vmHosts = Get-Cluster -Name ${clusterName} | Get-VMHost | 
         Select-Object Name, @{Name="ConnectionState"; Expression={$_.ConnectionState.ToString()}}, 
                       @{Name='CPU';Expression={$_.NumCpu}}, 
                       @{Name='Memory';Expression={[math]::round($_.MemoryTotalGB, 2)}}
         $vmHosts | ConvertTo-Json -Depth 1
     `;
-    runPowerCLICommand(command, (err, output) => {
+    const options = {
+        vCenterIP: process.env.VCENTER_IP,
+        vCenterUser: process.env.VCENTER_USER,
+        vCenterPass: process.env.VCENTER_PASS
+    };
+    runPowerCLICommand(command, options, (err, output) => {
         if (err) return res.json({ success: false, error: "Failed to fetch VM hosts." });
 
         let lines = output.trim().split("\n");
@@ -109,11 +139,19 @@ function vmHostsFromPowerCLI(res){
 
         try {
             const vmHosts = JSON.parse(cleanOutput);
-            const hostList = Array.isArray(vmHosts) ? vmHosts : [vmHosts];
+            const hostListRaw = Array.isArray(vmHosts) ? vmHosts : [vmHosts];
 
-            // Insert or update DB
+            // Normalize keys to match DB column names and client expectations
+            const hostList = hostListRaw.map(h => ({
+                name: h.Name || h.name || null,
+                connection_state: h.ConnectionState || h.connection_state || null,
+                cpu: h.CPU || h.cpu || null,
+                memory: h.Memory || h.memory || null
+            }));
+
+            // Insert or update DB into environment-specific table using normalized keys
             const insertStmt = db.prepare(`
-                INSERT INTO vmhosts (name, connection_state, cpu, memory) 
+                INSERT INTO ${tableName} (name, connection_state, cpu, memory) 
                 VALUES (?, ?, ?, ?) 
                 ON CONFLICT(name) DO UPDATE SET 
                     connection_state = excluded.connection_state, 
@@ -122,7 +160,7 @@ function vmHostsFromPowerCLI(res){
             `);
 
             hostList.forEach(host => {
-                insertStmt.run(host.Name, host.ConnectionState, host.CPU, host.Memory);
+                insertStmt.run(host.name, host.connection_state, host.cpu, host.memory);
             });
 
             insertStmt.finalize();
@@ -169,7 +207,12 @@ function dsFromPowerCLI(res){
         $datastores | ConvertTo-Json -Depth 1
     `;
 
-    runPowerCLICommand(command, (err, output) => {
+    const options = {
+        vCenterIP: process.env.VCENTER_IP,
+        vCenterUser: process.env.VCENTER_USER,
+        vCenterPass: process.env.VCENTER_PASS
+    };
+    runPowerCLICommand(command, options, (err, output) => {
         if (err) return res.json({ success: false, error: "Failed to fetch Datastores." });
 
         let lines = output.trim().split("\n");
@@ -240,7 +283,13 @@ function vmsFromPowerCLI(res){
         $vms | ConvertTo-Json -Depth 1
     `;
 
-    runPowerCLICommand(command, (err, output) => {
+    const options = {
+        vCenterIP: process.env.VCENTER_IP,
+        vCenterUser: process.env.VCENTER_USER,
+        vCenterPass: process.env.VCENTER_PASS
+    };
+
+    runPowerCLICommand(command, options, (err, output) => {
         if (err) return res.json({ success: false, error: "Failed to fetch Virtual Machines." });
 
         // Trim and check if output is empty
@@ -432,10 +481,19 @@ function validateLUN(volumes) {
         
         console.log("Processing volumes:", volumes);
 
+        const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
+        const esxHostEnv = process.env.ESX_HOST || '';
+        const vCenterIP = process.env.VCENTER_IP || '';
+
+        // If ESX_HOST is provided use it, otherwise select first host from the cluster
+        const esxHostCommand = esxHostEnv
+            ? `$esxHost = Get-VMHost -Name \"${esxHostEnv}\"`
+            : `$esxHost = Get-Cluster -Name ${clusterName} | Get-VMHost | Select-Object -First 1`;
+
         const command = `
         $volumes = '${volumesJson}'
         $volumesObject = $volumes | ConvertFrom-Json
-        $esxHost = Get-VMHost -Name "pgd-jkt-srd-svr-01.pegadaian.co.id"
+        ${esxHostCommand}
         $dsView = Get-View $esxHost.ExtensionData.ConfigManager.DatastoreSystem
         $results = @()
 
@@ -483,7 +541,12 @@ function validateLUN(volumes) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -534,12 +597,21 @@ router.post('/rescan_storage', async (req, res) => {
     try {
         console.log("🔄 Rescanning Storage on all Hosts...");
 
+        const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
+        const vCenterIP = process.env.VCENTER_IP || '';
+
         const command = `
-        $vmHosts = Get-Cluster -Name PGD-JKT-SRD-01 | Get-VMHost
+        $vmHosts = Get-Cluster -Name ${clusterName} | Get-VMHost
         Get-VMHostStorage -VMHost $vmHosts -RescanAllHba -RescanVmfs
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: vCenterIP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             if (err) {
                 console.error("❌ PowerCLI Rescan Error:", err);
                 return res.status(500).json({ success: false, message: "Rescan failed", error: err });
@@ -686,10 +758,18 @@ function presentAllVolumesResignatured(volumes) {
         
         console.log("Processing volumes:", volumes);
 
+        const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
+        const esxHostEnv = process.env.ESX_HOST || '';
+        const vCenterIP = process.env.VCENTER_IP || '';
+
+        const esxHostCommand = esxHostEnv
+            ? `$esxHost = Get-VMHost -Name \"${esxHostEnv}\"`
+            : `$esxHost = Get-Cluster -Name ${clusterName} | Get-VMHost | Select-Object -First 1`;
+
         const command = `
         $volumes = '${volumesJson}'
         $volumesObject = $volumes | ConvertFrom-Json
-        $esxHost = Get-VMHost -Name "pgd-jkt-srd-svr-01.pegadaian.co.id"
+        ${esxHostCommand}
         $dsView = Get-View $esxHost.ExtensionData.ConfigManager.DatastoreSystem
         $results = @()
 
@@ -739,7 +819,13 @@ function presentAllVolumesResignatured(volumes) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: vCenterIP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -886,12 +972,21 @@ function fetchAllDatastoreDetailsFromPowerCLI(datastores) {
         
         console.log("Processing datastores:", datastores);
 
+        const vCenterIP = process.env.VCENTER_IP || '';
+        const vCenterDC = process.env.VCENTER_DATACENTER || process.env.VCENTER_DC || '';
+        const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
+        const esxHostEnv = process.env.ESX_HOST || '';
+
+        const esxHostCommand = esxHostEnv
+            ? `$esxHost = Get-VMHost -Name \"${esxHostEnv}\"`
+            : `$esxHost = Get-Cluster -Name ${clusterName} | Get-VMHost | Select-Object -First 1`;
+
         const command = `
         $datastores = '${datastoresJson}'
         $datastoresObject = $datastores | ConvertFrom-Json
         $vCenterIP = '${vCenterIP}'
         $datacenterName = '${vCenterDC}'
-        $esxHost = Get-VMHost -Name "pgd-jkt-srd-svr-01.pegadaian.co.id"
+        ${esxHostCommand}
         $results = @()
         foreach ($datastore in $datastoresObject){
                     $datastoreName = $datastore.datastore_name
@@ -926,7 +1021,13 @@ function fetchAllDatastoreDetailsFromPowerCLI(datastores) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: vCenterIP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -1040,16 +1141,35 @@ function registerSelectedVM(vmxPaths) {
         
         console.log("Processing VMX:", vmxPaths);
 
+        const clusterName = process.env.VCENTER_CLUSTER || 'PGD-JKT-SRD-01';
+        const esxHostEnv = process.env.ESX_HOST || '';
+        const vCenterIP = process.env.VCENTER_IP || '';
+
+        const esxHostCommand = esxHostEnv
+            ? `$esxHost = Get-VMHost -Name \"${esxHostEnv}\"`
+            : `$esxHost = Get-Cluster -Name ${clusterName} | Get-VMHost | Select-Object -First 1`;
+
         const command = `
         $vmxPaths = '${vmxPathsJson}'
         $vmxPathsObject = $vmxPaths | ConvertFrom-Json
-        $esxHost = Get-VMHost -Name "pgd-jkt-srd-svr-01.pegadaian.co.id"
+        ${esxHostCommand}
         $results = @()
 
         foreach ($vmx in $vmxPathsObject) {
-            $VM = New-VM -VMFilePath $vmx -Host $esxHost
+            # Derive a base name from the VMX path and append a timestamp suffix
+            try {
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($vmx)
+            } catch {
+                # Fallback: remove .vmx if present
+                $baseName = $vmx -replace '\.vmx$',''
+            }
+            $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+            $newName = "$($baseName)-$timestamp"
+
+            # Register the VM using a unique name with timestamp suffix
+            $VM = New-VM -VMFilePath $vmx -Host $esxHost -Name $newName
             $VMName = $VM.Name
-            Write-Host "VM $VM registered successfully from: $($vmx)"
+            Write-Host "VM $VMName registered successfully from: $($vmx)"
             $status = "registered"
 
             # Add result to array
@@ -1066,7 +1186,13 @@ function registerSelectedVM(vmxPaths) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: vCenterIP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -1304,7 +1430,13 @@ function reconfigallVMNIC(vmNICs) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -1402,7 +1534,13 @@ function powerSelectedVM(vms) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -1499,7 +1637,13 @@ function powerOffSelectedVM(vms) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {
@@ -1592,7 +1736,13 @@ function removeSelectedVM(vms) {
         Write-Output $resultsJson
         `;
 
-        runPowerCLICommand(command, (err, output) => {
+        const options = {
+            vCenterIP: process.env.VCENTER_IP,
+            vCenterUser: process.env.VCENTER_USER,
+            vCenterPass: process.env.VCENTER_PASS
+        };
+
+        runPowerCLICommand(command, options, (err, output) => {
             let lines = output.trim().split("\n");
             let jsonStartIndex = lines.findIndex(line => line.trim().startsWith("{") || line.trim().startsWith("["));
             if (jsonStartIndex === -1) {

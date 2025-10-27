@@ -20,6 +20,28 @@ db.serialize(() => {
         cpu INTEGER,
         memory REAL
     )`);
+    // Per-environment vmhosts tables
+    db.run(`CREATE TABLE IF NOT EXISTS vmhosts_jkt (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        connection_state TEXT,
+        cpu INTEGER,
+        memory REAL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS vmhosts_sby (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        connection_state TEXT,
+        cpu INTEGER,
+        memory REAL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS vmhosts_ini (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        connection_state TEXT,
+        cpu INTEGER,
+        memory REAL
+    )`);
     
     db.run(`CREATE TABLE IF NOT EXISTS datastores (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,5 +130,15 @@ db.serialize(() => {
 
 
 });
+
+// Helper to return vmhosts table name for an environment. Defaults to legacy 'vmhosts'.
+db.getVMHostsTableName = function (env) {
+    if (!env) return 'vmhosts';
+    const e = String(env).toLowerCase();
+    if (e === 'jkt') return 'vmhosts_jkt';
+    if (e === 'sby') return 'vmhosts_sby';
+    if (e === 'ini') return 'vmhosts_ini';
+    return 'vmhosts';
+};
 
 module.exports = db;

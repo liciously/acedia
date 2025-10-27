@@ -6,6 +6,8 @@ const express = require('express');
 const session = require('./config/session');
 const path = require('path');
 const dotenv = require('dotenv');
+// Load default environment file at startup (can be overridden per-session)
+dotenv.config({ path: './ini.env', override: false }); // load defaults for initial logs
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const protectionRoutes = require('./routes/protection');

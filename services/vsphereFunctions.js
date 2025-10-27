@@ -1,15 +1,16 @@
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('../config/vsphere.db');
+// Use shared vsphere DB module which exposes helper functions
+const db = require('../config/vspheredb');
 
 // Function to insert/update VM Hosts
-async function storeVMHosts(vmhosts) {
+// storeVMHosts stores/updates vmhosts into the specified tableName (default: 'vmhosts')
+async function storeVMHosts(vmhosts, tableName = 'vmhosts') {
     const insertQuery = `
-        INSERT INTO vmhosts (name, connection_state, cpu, memory) 
+        INSERT INTO ${tableName} (name, connection_state, cpu, memory) 
         VALUES (?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET 
-        connection_state=excluded.connection_state, 
-        cpu=excluded.cpu, 
-        memory=excluded.memory;
+            connection_state=excluded.connection_state, 
+            cpu=excluded.cpu, 
+            memory=excluded.memory;
     `;
 
     vmhosts.forEach(host => {
@@ -23,7 +24,8 @@ async function storeVMHosts(vmhosts) {
 async function getVMHosts(req, res) {
     try {
         const vmhosts = await fetchVMHosts(); // Your function to fetch from vSphere
-        await storeVMHosts(vmhosts);
+        const tableName = db.getVMHostsTableName(req.session && req.session.environment);
+        await storeVMHosts(vmhosts, tableName);
 
         res.json({ success: true, vmhosts });
     } catch (error) {
